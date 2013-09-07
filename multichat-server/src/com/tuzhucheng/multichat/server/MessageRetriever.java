@@ -15,14 +15,20 @@ public class MessageRetriever extends Thread {
     @Override
     public void run() {
         while (true) {
-            String receivedMessage = messageQueue.pollReceivedMessage();
-            System.out.println(receivedMessage);
-            messageQueue.addToSendMessage(receivedMessage);
-            if (isInterrupted()) {
+            try {
+                String receivedMessage = messageQueue.pollReceivedMessage();
+                if (receivedMessage == null) {
+                    System.err.println("Received null message. Terminating.");
+                    break;
+                } else {
+                    System.out.println(receivedMessage);
+                    messageQueue.addToSendMessage(receivedMessage);
+                }
+            } catch (InterruptedException e) {
                 break;
             }
         }
-        System.out.println("MessageRetriever ended");
+        System.out.println("MessageRetriever ended.");
     }
 
 }

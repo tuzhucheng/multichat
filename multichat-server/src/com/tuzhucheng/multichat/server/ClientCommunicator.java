@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.List;
 
 /**
@@ -16,14 +17,13 @@ import java.util.List;
 public class ClientCommunicator extends Thread {
 
     private Socket socket;
-    BufferedReader in;
-    PrintWriter out;
-    MessageQueue messageQueue;
-    Sender sender;
-    int toSendMessageIndex = 0;
+    private BufferedReader in;
+    private PrintWriter out;
+    private MessageQueue messageQueue;
+    private Sender sender;
 
     public ClientCommunicator(Socket socket, MessageQueue messageQueue) {
-        System.out.println("Connected to new client at port " + socket.getPort() + ".");
+        System.out.println("Connected to new client at port " + socket.getPort() + ". Local port is " + socket.getLocalPort());
         this.messageQueue = messageQueue;
         this.socket = socket;
         try {
@@ -32,7 +32,6 @@ public class ClientCommunicator extends Thread {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
     }
 
     @Override
@@ -43,30 +42,39 @@ public class ClientCommunicator extends Thread {
         try {
             while (true) {
                 String receivedMessage = in.readLine();
-                messageQueue.addReceivedMessage(receivedMessage);
+                if (receivedMessage != null)
+                    messageQueue.addReceivedMessage(receivedMessage);
+                else
+                    break;
             }
+        } catch (SocketException e) {
+            // Typically this means that the socket has been closed
         } catch (IOException e) {
-            e.printStackTrace();
-        }  finally {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (IOException e) {
-                    System.err.println("ClientCommunicator BufferedReader failed to close.");
-                }
-            }
+            System.err.println(e.getMessage());
         }
 
         System.out.println("ClientCommunicator thread ended.");
     }
 
-    public void stopClientCommunicator() {
-        if (in != null) {
+    public void closeInputStream() {
+        if (!socket.isInputShutdown()) {
             try {
-                in.close();
-                sender.interrupt();
+                socket.shutdownInput();
+                messageQueue.changeClientInfoStatus(socket.getPort(), ClientInfo.STATE_CLOSED_INPUTSTREAM);
             } catch (IOException e) {
-                System.err.println("ClientCommunicator BufferedReader failed to close.");
+                System.err.println("Failed to close socket input stream.");
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public void closeOutputStream() {
+        if(!socket.isOutputShutdown()) {
+            try {
+                socket.shutdownOutput();
+            } catch (IOException e) {
+                System.err.println("Failed to close socket output stream.");
+                e.printStackTrace();
             }
         }
     }
@@ -77,24 +85,35 @@ public class ClientCommunicator extends Thread {
 
     private class Sender extends Thread {
 
+        private int toSendMessageIndex;
+
         @Override
         public void run() {
             while (true) {
-                List<String> messages = messageQueue.retrieveToSendMessages(toSendMessageIndex);
-                if (messages != null) {
-                    for (String message : messages) {
-                        out.println(message);
-                        toSendMessageIndex++;
+                try {
+                    List<String> messages = messageQueue.retrieveToSendMessages(toSendMessageIndex);
+                    if (messages != null) {
+                        boolean exit = false;
+                        for (String message : messages) {
+                            out.println(message);
+                            toSendMessageIndex++;
+                            if (message.equals("CLOSE_SOCKET_INPUT")) {
+                                closeOutputStream();
+                                messageQueue.changeClientInfoStatus(socket.getPort(), ClientInfo.STATE_CLOSED_OUTPUTSTREAM);
+                                exit = true;
+                                break;
+                            }
+                        }
+                        if (exit) break;
+                    } else {
+                        System.err.println("Null messages!");
+                        break;
                     }
-                } else {
-                    System.err.println("Null messages!");
-                    break;
-                }
-
-                if (isInterrupted()) {
+                } catch (InterruptedException e) {
                     break;
                 }
             }
+
             System.out.println("ClientCommunicator.Sender thread stopped.");
         }
     }

@@ -1,21 +1,19 @@
 package com.tuzhucheng.multichat.client;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.Socket;
+import java.net.SocketException;
 
 public class Main {
 
-    Socket clientSocket;
-    PrintWriter out;
-    BufferedReader userInput;
-    ClientReceiver clientReceiver;
+    private Socket clientSocket;
+    public PrintWriter out;
+    public BufferedReader userInput;
+    private ClientReceiver clientReceiver;
 
     private static final int SERVER_PORT = 4545;
 
-    String line;
+    private String line;
 
     public static void main(String[] args) {
 	    Main uiSender = new Main();
@@ -26,29 +24,42 @@ public class Main {
         try {
             clientSocket = new Socket("localhost", SERVER_PORT);
             out = new PrintWriter(clientSocket.getOutputStream(), true);
-            clientReceiver = new ClientReceiver(clientSocket);
+            clientReceiver = new ClientReceiver(this, clientSocket);
             userInput = new BufferedReader(new InputStreamReader(System.in));
 
             clientReceiver.start();
 
             while(true) {
                 line = userInput.readLine();
-                out.println(line);
-                if(line.equals("END")) {
-                    clientReceiver.interrupt();
+                if (!clientSocket.isClosed()) {
+                    if (line != null) {
+                        out.println(line);
+                        if(line.equals("END")) {
+                            clientReceiver.interrupt();
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                } else {
                     break;
                 }
             }
 
+        } catch (SocketException e) {
+            // If ClientReceiver receives END message from server, it will terminate the socket
+            // to notify the main thread that it should end too
+            System.out.println("Main thread socketexception");
         } catch (IOException e) {
-            System.err.println("Caught IOException");
             e.printStackTrace();
         } finally {
             try {
-                if (clientSocket != null)
+                out.close();
+                if (clientSocket != null) {
                     clientSocket.close();
+                }
             } catch (IOException e) {
-                System.err.println("Client socket failed to close.");
+                System.err.println("Failed to close.");
             }
         }
 

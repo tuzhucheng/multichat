@@ -30,7 +30,7 @@ public class Main {
         messageRetriever.start();
 
         inputStream = new BufferedReader(new InputStreamReader(System.in));
-        String line = null;
+        String line;
         do {
             try {
                 line = inputStream.readLine();
@@ -41,7 +41,6 @@ public class Main {
                     break;
                 }
             } catch (IOException e) {
-                System.err.println("Main thread caught IOException.");
                 return;
             }
         } while (line != null);
